@@ -1,0 +1,34 @@
+DataProductsProject
+========================================================
+author: Robert Cordery
+date: March 22, 2015
+
+Choose your 1974 car
+========================================================
+
+This app lets you cghoose from one of the new condition 1974 cars available from the mtcars lot!
+
+- Select your features
+- Select your miles per gallon
+- A red dot shows where your desires lie relative to the avaliable cars
+- Call mtcars to buy your car
+
+A small sample of our cars
+========================================================
+
+```{r}
+a<-mtcars[1:5, c("mpg","wt","cyl","am")]
+a
+```
+
+OK, the plot needs work
+========================================================
+
+```{r, echo=FALSE}
+plot(y=mtcars$mpg , x= mtcars$wt,
+                                      xlab="Weight",ylab="Height")
+                                 points(y=25,x=4, 
+                                        col="red", pch=24, bg="red")
+                                 with(mtcars, 
+                                      text(mpg~wt, labels = row.names(mtcars), pos = 4))
+```
