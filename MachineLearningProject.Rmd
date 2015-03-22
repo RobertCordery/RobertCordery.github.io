@@ -1,0 +1,149 @@
+---
+title: "Machine Learning Project"
+author: "Robert Cordery"
+date: "Monday, March 21, 2015"
+output: html_document
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. In this project, the goal is to predict the quality of exercise using data from accelerometers on 6 participants. More information, and their paper is available from the website here: http://groupware.les.inf.puc-rio.br/har. 
+
+```{r setEnvironment}
+# Load teh necessary libraries
+library(caret)
+library(ggplot2)
+library(GGally)
+library(dplyr)
+```
+
+## Load data 
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data has several variables that are all or mostly NA or blank. I remove those from the loaded data. 
+
+```{r loadData, cache =TRUE}
+
+trainFile <- "pml-training.csv"
+testFile <- "pml-testing.csv"
+dataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn"
+dataLocal <- "./data"
+dir.create(dataLocal, showWarnings = FALSE)
+
+trainSource <- paste(dataLocal,trainFile, sep="/")
+if(!file.exists(trainSource)){
+    download.file(url = paste(dataUrl,trainFile, sep="/"),
+                  destfile = trainSource, method="curl")
+} 
+trainData <- read.csv(trainSource, na.strings=c("NA","","#DIV/0!"))
+trainData$classe <- factor(trainData$classe)
+trainData$user_name <- factor(trainData$user_name)
+useCol <- colSums(is.na(trainData)) < 1000
+trainData <- trainData[,useCol]
+testSource <- paste(dataLocal,testFile, sep="/")
+if(!file.exists(testSource)){
+        download.file(url = paste(dataUrl,testFile, sep="/"),
+                  destfile = testSource, method="curl")
+
+} 
+testData <- read.csv(testSource)
+testData <- testData[,useCol]
+```
+
+# Partition the data
+
+The trainData set is quite large with a large number of variables, so I decided to split the data rows randomly into three parts:  
+
+1. an initial set of 20% of the data is used to create an initial model to identify the most important variables,
+2. a larger training set of %60 of the data is used to train a random forest model,
+3. the remaining 20% set is used for cross validation and to estimate the confusion matrix. 
+
+Variables that are not related to motion are removed from the data.  For example, I removed the username variable. While the result may be correlated with username, the goal is to predict the quality of exercise for another person, not for the particular test subjects.  
+
+```{r partitionData}
+initialPartition <- createDataPartition(y=trainData$classe,p=0.2, times=2,list=FALSE)
+indexInit <- initialPartition[,1]
+indexTest <- initialPartition[,2]
+indexTrain<- setdiff(1:nrow(trainData),  
+                   union(indexInit,indexTest))
+# Construct the initial, training and test data sets
+initSet <- trainData[indexInit,8:60]
+testSet <- trainData[indexTest,8:60]
+trainSet<- trainData[indexTrain,8:60]
+```
+
+# Select important variables using a rough model
+
+Here we use the initial set to select variables that meet a minimum importance level. 
+
+```{r VariableSelection, cache=TRUE}
+
+modFit <- train(classe ~ ., data=initSet, method="rf", prox=TRUE, ntree=30, tuneGrid = NULL, tuneLength = 3)
+
+minImportance <- 8
+importanceVars <- varImp(modFit)
+useVar <- importanceVars$importance > minImportance
+sum(useVar)
+
+# Add in the output variable classe
+useVar=c(useVar,TRUE)
+trainSet2<-trainSet[,useVar]
+testSet2 <-testSet[,useVar]
+
+```
+## Train the final model
+
+The final model is trained on the training set with the reduced set of variables. The selected variables are `r  names(testSet2)`.
+
+```{r fitTraining, cache=TRUE}
+
+fitControl <- trainControl(method="cv" )
+modFitTrain <- train(classe ~ ., trControl=fitControl, data=trainSet2, method="rf", prox=TRUE, ntree=40,tuneGrid = NULL, tuneLength = 3)
+importanceVarsTrain <- varImp(modFitTrain)
+
+```
+
+## Cross validation
+
+Now we use the part of the data set aside for testing the final model and construct a confusion matrix. 
+```{r crossValidation}
+
+predictions <- predict(modFitTrain, newdata = testSet2)
+
+a=c("classe", "roll_belt", "pitch_forearm", "yaw_belt")
+
+
+ggpairs(trainSet[,a], lower = list(continuous = "smooth"),params = c(method = "loess"))
+
+confusionMatrix(predictions, testSet2$classe)
+
+```
+## Apply final model to the testData
+The classe variable is not known for the test data set. 
+```{r}
+testPredictions <- predict(modFitTrain, newdata = testData)
+answers=as.character(testPredictions)
+answers
+```
+
+## Generate submissions
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+answers=as.character(testPredictions)
+pml_write_files(answers)
+
+```
+
+## References
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th Augmented Human (AH) International Conference in cooperation with ACM SIGCHI (Augmented Human'13) . Stuttgart, Germany: ACM SIGCHI, 2013.
